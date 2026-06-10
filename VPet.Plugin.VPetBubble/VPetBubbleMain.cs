@@ -29,6 +29,12 @@ namespace VPet.Plugin.VPetBubble
         private const double DefaultLightInterval = 12;
         private const double DefaultLightIntervalRandom = 0;
         private const double DefaultGameLightProbability = 0.1;
+        private const double DefaultCannonInterval = 8;
+        private const int DefaultCannonBurstCount = 12;
+        private const int DefaultCannonSize = 36;
+        private const double DefaultCannonSpeed = 8;
+        private const double CannonContinuousSeconds = 0.12;
+        private const double CannonBurstSeconds = 0.08;
         private const double DefaultGamePetMoveProbability = 0.25;
         private const double GamePetMoveCheckInterval = 2;
         private const double RingClockwiseProbability = 0.5;
@@ -40,6 +46,8 @@ namespace VPet.Plugin.VPetBubble
         private DispatcherTimer ringTimer;
         private DispatcherTimer ringSequenceTimer;
         private DispatcherTimer lightTimer;
+        private DispatcherTimer cannonTimer;
+        private DispatcherTimer cannonBurstTimer;
         private DispatcherTimer petMoveTimer;
         private DispatcherTimer moveTimer;
         private DispatcherTimer saveTimer;
@@ -51,6 +59,7 @@ namespace VPet.Plugin.VPetBubble
         private int ringDirectionIndex;
         private int ringDirectionStep;
         private int ringDirectionsRemaining;
+        private int cannonBurstRemaining;
 
         public override string PluginName => "Pet Bubble";
 
@@ -75,6 +84,12 @@ namespace VPet.Plugin.VPetBubble
                 lightTimer = new DispatcherTimer();
                 lightTimer.Tick += LightTimer_Tick;
 
+                cannonTimer = new DispatcherTimer();
+                cannonTimer.Tick += CannonTimer_Tick;
+
+                cannonBurstTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(CannonBurstSeconds) };
+                cannonBurstTimer.Tick += CannonBurstTimer_Tick;
+
                 petMovementController = new PetMovementController(MW);
                 petMoveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(GamePetMoveCheckInterval) };
                 petMoveTimer.Tick += PetMoveTimer_Tick;
@@ -98,6 +113,8 @@ namespace VPet.Plugin.VPetBubble
                 ringTimer?.Stop();
                 ringSequenceTimer?.Stop();
                 lightTimer?.Stop();
+                cannonTimer?.Stop();
+                cannonBurstTimer?.Stop();
                 petMoveTimer?.Stop();
                 moveTimer?.Stop();
                 saveTimer?.Stop();
@@ -154,6 +171,7 @@ namespace VPet.Plugin.VPetBubble
                 spawnTimer.Stop();
                 StopRingGeneration();
                 StopLightGeneration();
+                StopCannonGeneration();
                 if (scoreWindow == null)
                 {
                     StartGameMode(false);
@@ -167,12 +185,14 @@ namespace VPet.Plugin.VPetBubble
                 spawnTimer.Start();
                 StartRingGeneration();
                 StartLightGeneration();
+                StartCannonGeneration();
             }
             else
             {
                 spawnTimer.Stop();
                 StopRingGeneration();
                 StopLightGeneration();
+                StopCannonGeneration();
                 ClearBubbles();
             }
         }
@@ -187,6 +207,7 @@ namespace VPet.Plugin.VPetBubble
             }
             StopRingGeneration();
             StopLightGeneration();
+            StopCannonGeneration();
             ClearBubbles();
             StartGameMode(true);
             QueueSaveSettings();
@@ -214,6 +235,7 @@ namespace VPet.Plugin.VPetBubble
                     spawnTimer?.Stop();
                     StopRingGeneration();
                     StopLightGeneration();
+                    StopCannonGeneration();
                     StopPetMovement();
                 },
                 () =>
@@ -238,6 +260,7 @@ namespace VPet.Plugin.VPetBubble
             spawnTimer?.Stop();
             StopRingGeneration();
             StopLightGeneration();
+            StopCannonGeneration();
             StopPetMovement();
             ClearBubbles();
             IsGameMode = false;
@@ -247,6 +270,7 @@ namespace VPet.Plugin.VPetBubble
                 spawnTimer.Start();
                 StartRingGeneration();
                 StartLightGeneration();
+                StartCannonGeneration();
             }
             settingWindow?.RefreshFromPlugin();
             QueueSaveSettings();
@@ -257,6 +281,7 @@ namespace VPet.Plugin.VPetBubble
             spawnTimer?.Stop();
             StopRingGeneration();
             StopLightGeneration();
+            StopCannonGeneration();
             StopPetMovement();
             ClearBubbles();
             IsGameMode = false;
@@ -267,6 +292,7 @@ namespace VPet.Plugin.VPetBubble
                 spawnTimer.Start();
                 StartRingGeneration();
                 StartLightGeneration();
+                StartCannonGeneration();
             }
             settingWindow?.RefreshFromPlugin();
             QueueSaveSettings();
@@ -278,6 +304,7 @@ namespace VPet.Plugin.VPetBubble
             spawnTimer?.Stop();
             StopRingGeneration();
             StopLightGeneration();
+            StopCannonGeneration();
             StopPetMovement();
             ClearBubbles();
             QueueSaveSettings();
@@ -293,6 +320,7 @@ namespace VPet.Plugin.VPetBubble
             scoreWindow.StopCountdown();
             StopRingGeneration();
             StopLightGeneration();
+            StopCannonGeneration();
             StopPetMovement();
             if (closeWindow)
             {
@@ -478,6 +506,90 @@ namespace VPet.Plugin.VPetBubble
             lightTimer.Interval = TimeSpan.FromSeconds(DailyLightInterval + random.NextDouble() * DailyLightIntervalRandom);
         }
 
+        private void CannonTimer_Tick(object sender, EventArgs e)
+        {
+            if (IsGameMode || !Enabled || !DailyCannonEnabled)
+            {
+                return;
+            }
+
+            if (DailyCannonContinuousMode)
+            {
+                CreateCannonBubble();
+                return;
+            }
+
+            StartCannonBurst();
+        }
+
+        private void CannonBurstTimer_Tick(object sender, EventArgs e)
+        {
+            if (IsGameMode || !Enabled || !DailyCannonEnabled || DailyCannonContinuousMode)
+            {
+                StopCannonBurst();
+                return;
+            }
+
+            if (cannonBurstRemaining <= 0)
+            {
+                StopCannonBurst();
+                return;
+            }
+
+            CreateCannonBubble();
+            cannonBurstRemaining--;
+        }
+
+        private void StartCannonGeneration()
+        {
+            if (cannonTimer == null)
+            {
+                return;
+            }
+
+            if (IsGameMode || !Enabled || !DailyCannonEnabled)
+            {
+                StopCannonGeneration();
+                return;
+            }
+
+            cannonTimer.Interval = TimeSpan.FromSeconds(DailyCannonContinuousMode
+                ? CannonContinuousSeconds
+                : DailyCannonInterval);
+            if (DailyCannonContinuousMode)
+            {
+                StopCannonBurst();
+            }
+            cannonTimer.Start();
+        }
+
+        private void StopCannonGeneration()
+        {
+            cannonTimer?.Stop();
+            StopCannonBurst();
+        }
+
+        private void StartCannonBurst()
+        {
+            if (cannonBurstTimer == null || cannonBurstTimer.IsEnabled)
+            {
+                return;
+            }
+
+            cannonBurstRemaining = DailyCannonBurstCount;
+            CannonBurstTimer_Tick(null, EventArgs.Empty);
+            if (cannonBurstRemaining > 0)
+            {
+                cannonBurstTimer.Start();
+            }
+        }
+
+        private void StopCannonBurst()
+        {
+            cannonBurstTimer?.Stop();
+            cannonBurstRemaining = 0;
+        }
+
         private void CreateLightBurst()
         {
             var centerDirection = random.Next(4) * Math.PI / 2;
@@ -577,16 +689,42 @@ namespace VPet.Plugin.VPetBubble
 
         private void CreateBubbleAt(Point center, double angle, int? fixedSize = null)
         {
+            CreateBubbleAt(center, angle, fixedSize, null, null);
+        }
+
+        private void CreateBubbleAt(Point center, double angle, int? fixedSize, Brush customBrush, double? fixedSpeed)
+        {
             var size = fixedSize ?? random.Next(MinSize, MaxSize + 1);
-            var bubble = CreateBubbleElement(size);
+            var bubble = CreateBubbleElement(size, customBrush);
 
             Canvas.SetLeft(bubble, center.X - size / 2);
             Canvas.SetTop(bubble, center.Y - size / 2);
             bubbleCanvas.Children.Add(bubble);
-            AddMovingBubble(bubble, angle);
+            AddMovingBubble(bubble, angle, fixedSpeed);
         }
 
-        private FrameworkElement CreateBubbleElement(int size)
+        private void CreateCannonBubble()
+        {
+            var mouse = GetMousePointInBubbleWindow();
+            if (mouse == null)
+            {
+                return;
+            }
+
+            var center = GetPetCenter();
+            var deltaX = mouse.Value.X - center.X;
+            var deltaY = mouse.Value.Y - center.Y;
+            if (Math.Abs(deltaX) < 1 && Math.Abs(deltaY) < 1)
+            {
+                return;
+            }
+
+            BringBubbleWindowToFront();
+            var angle = Math.Atan2(deltaY, deltaX);
+            CreateBubbleAt(center, angle, DailyCannonSize, CreateCannonBubbleBrush(), DailyCannonSpeed);
+        }
+
+        private FrameworkElement CreateBubbleElement(int size, Brush customBrush = null)
         {
             var bubble = new Grid
             {
@@ -599,7 +737,7 @@ namespace VPet.Plugin.VPetBubble
 
             bubble.Children.Add(new Ellipse
             {
-                Fill = CreateRandomBubbleBrush(),
+                Fill = customBrush ?? CreateRandomBubbleBrush(),
                 Stroke = new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)),
                 StrokeThickness = Math.Max(1.5, size / 22.0)
             });
@@ -647,9 +785,100 @@ namespace VPet.Plugin.VPetBubble
             return brush;
         }
 
-        private void AddMovingBubble(FrameworkElement bubble, double angle)
+        private Brush CreateCannonBubbleBrush()
         {
-            var speed = random.NextDouble() * (MaxSpeed - MinSpeed) + MinSpeed;
+            var colors = new List<Color>();
+            if (DailyCannonBlueEnabled)
+            {
+                colors.Add(Color.FromRgb(135, 206, 250));
+            }
+            if (DailyCannonGreenEnabled)
+            {
+                colors.Add(Color.FromRgb(152, 251, 152));
+            }
+            if (DailyCannonPinkEnabled)
+            {
+                colors.Add(Color.FromRgb(255, 182, 193));
+            }
+            if (DailyCannonPurpleEnabled)
+            {
+                colors.Add(Color.FromRgb(221, 160, 221));
+            }
+            if (DailyCannonYellowEnabled)
+            {
+                colors.Add(Color.FromRgb(255, 240, 145));
+            }
+            if (DailyCannonWhiteEnabled)
+            {
+                colors.Add(Color.FromRgb(245, 250, 255));
+            }
+            if (DailyCannonRedEnabled)
+            {
+                colors.Add(Color.FromRgb(248, 113, 113));
+            }
+            if (DailyCannonOrangeEnabled)
+            {
+                colors.Add(Color.FromRgb(251, 146, 60));
+            }
+            if (DailyCannonGoldEnabled)
+            {
+                colors.Add(Color.FromRgb(250, 204, 21));
+            }
+            if (DailyCannonLimeEnabled)
+            {
+                colors.Add(Color.FromRgb(190, 242, 100));
+            }
+            if (DailyCannonMintEnabled)
+            {
+                colors.Add(Color.FromRgb(110, 231, 183));
+            }
+            if (DailyCannonTealEnabled)
+            {
+                colors.Add(Color.FromRgb(45, 212, 191));
+            }
+            if (DailyCannonCyanEnabled)
+            {
+                colors.Add(Color.FromRgb(103, 232, 249));
+            }
+            if (DailyCannonIndigoEnabled)
+            {
+                colors.Add(Color.FromRgb(129, 140, 248));
+            }
+            if (DailyCannonRoseEnabled)
+            {
+                colors.Add(Color.FromRgb(251, 113, 133));
+            }
+            if (DailyCannonCoralEnabled)
+            {
+                colors.Add(Color.FromRgb(252, 165, 165));
+            }
+            if (colors.Count == 0)
+            {
+                colors.Add(Color.FromRgb(135, 206, 250));
+            }
+
+            return CreateBubbleBrush(colors[random.Next(colors.Count)]);
+        }
+
+        private Brush CreateBubbleBrush(Color color)
+        {
+            var brush = new RadialGradientBrush
+            {
+                Center = new Point(0.42, 0.42),
+                GradientOrigin = new Point(0.28, 0.24),
+                RadiusX = 0.75,
+                RadiusY = 0.75
+            };
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(120, 255, 255, 255), 0));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(120, color.R, color.G, color.B), 0.52));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(185, color.R, color.G, color.B), 1));
+
+            return brush;
+        }
+
+        private void AddMovingBubble(FrameworkElement bubble, double angle, double? fixedSpeed = null)
+        {
+            var speed = fixedSpeed ?? random.NextDouble() * (MaxSpeed - MinSpeed) + MinSpeed;
             bubbles.Add(new BubbleInfo(bubble, Math.Cos(angle) * speed, Math.Sin(angle) * speed));
         }
 
@@ -813,6 +1042,7 @@ namespace VPet.Plugin.VPetBubble
             ResetDailyBasicSettings(false);
             ResetDailyRingSettings(false);
             ResetDailyLightSettings(false);
+            ResetDailyCannonSettings(false);
             if (apply)
             {
                 ApplySettings();
@@ -849,6 +1079,36 @@ namespace VPet.Plugin.VPetBubble
             DailyLightEnabled = true;
             DailyLightInterval = DefaultLightInterval;
             DailyLightIntervalRandom = DefaultLightIntervalRandom;
+            if (apply)
+            {
+                ApplySettings();
+            }
+        }
+
+        private void ResetDailyCannonSettings(bool apply = true)
+        {
+            DailyCannonEnabled = false;
+            DailyCannonContinuousMode = true;
+            DailyCannonInterval = DefaultCannonInterval;
+            DailyCannonBurstCount = DefaultCannonBurstCount;
+            DailyCannonSize = DefaultCannonSize;
+            DailyCannonSpeed = DefaultCannonSpeed;
+            DailyCannonBlueEnabled = true;
+            DailyCannonGreenEnabled = true;
+            DailyCannonPinkEnabled = true;
+            DailyCannonPurpleEnabled = true;
+            DailyCannonYellowEnabled = true;
+            DailyCannonWhiteEnabled = true;
+            DailyCannonRedEnabled = true;
+            DailyCannonOrangeEnabled = true;
+            DailyCannonGoldEnabled = true;
+            DailyCannonLimeEnabled = true;
+            DailyCannonMintEnabled = true;
+            DailyCannonTealEnabled = true;
+            DailyCannonCyanEnabled = true;
+            DailyCannonIndigoEnabled = true;
+            DailyCannonRoseEnabled = true;
+            DailyCannonCoralEnabled = true;
             if (apply)
             {
                 ApplySettings();
@@ -1001,6 +1261,138 @@ namespace VPet.Plugin.VPetBubble
         {
             get => Clamp(Config.GetDouble("daily_light_random", DefaultLightIntervalRandom), 0, 120);
             set => Config.SetDouble("daily_light_random", Clamp(value, 0, 120));
+        }
+
+        private bool DailyCannonEnabled
+        {
+            get => Config.GetBool("daily_cannon_enabled");
+            set => Config.SetBool("daily_cannon_enabled", value);
+        }
+
+        private bool DailyCannonContinuousMode
+        {
+            get => !Config.GetBool("daily_cannon_interval_mode");
+            set => Config.SetBool("daily_cannon_interval_mode", !value);
+        }
+
+        private double DailyCannonInterval
+        {
+            get => Clamp(Config.GetDouble("daily_cannon_interval", DefaultCannonInterval), 0.2, 120);
+            set => Config.SetDouble("daily_cannon_interval", Clamp(value, 0.2, 120));
+        }
+
+        private int DailyCannonBurstCount
+        {
+            get => (int)Clamp(Config.GetInt("daily_cannon_burst_count", DefaultCannonBurstCount), 1, 100);
+            set => Config.SetInt("daily_cannon_burst_count", (int)Clamp(value, 1, 100));
+        }
+
+        private int DailyCannonSize
+        {
+            get => (int)Clamp(Config.GetInt("daily_cannon_size", DefaultCannonSize), 8, 180);
+            set => Config.SetInt("daily_cannon_size", (int)Clamp(value, 8, 180));
+        }
+
+        private double DailyCannonSpeed
+        {
+            get => Clamp(Config.GetDouble("daily_cannon_speed", DefaultCannonSpeed), 0.5, 40);
+            set => Config.SetDouble("daily_cannon_speed", Clamp(value, 0.5, 40));
+        }
+
+        private bool DailyCannonBlueEnabled
+        {
+            get => !Config.GetBool("daily_cannon_blue_disabled");
+            set => Config.SetBool("daily_cannon_blue_disabled", !value);
+        }
+
+        private bool DailyCannonGreenEnabled
+        {
+            get => !Config.GetBool("daily_cannon_green_disabled");
+            set => Config.SetBool("daily_cannon_green_disabled", !value);
+        }
+
+        private bool DailyCannonPinkEnabled
+        {
+            get => !Config.GetBool("daily_cannon_pink_disabled");
+            set => Config.SetBool("daily_cannon_pink_disabled", !value);
+        }
+
+        private bool DailyCannonPurpleEnabled
+        {
+            get => !Config.GetBool("daily_cannon_purple_disabled");
+            set => Config.SetBool("daily_cannon_purple_disabled", !value);
+        }
+
+        private bool DailyCannonYellowEnabled
+        {
+            get => !Config.GetBool("daily_cannon_yellow_disabled");
+            set => Config.SetBool("daily_cannon_yellow_disabled", !value);
+        }
+
+        private bool DailyCannonWhiteEnabled
+        {
+            get => !Config.GetBool("daily_cannon_white_disabled");
+            set => Config.SetBool("daily_cannon_white_disabled", !value);
+        }
+
+        private bool DailyCannonRedEnabled
+        {
+            get => !Config.GetBool("daily_cannon_red_disabled");
+            set => Config.SetBool("daily_cannon_red_disabled", !value);
+        }
+
+        private bool DailyCannonOrangeEnabled
+        {
+            get => !Config.GetBool("daily_cannon_orange_disabled");
+            set => Config.SetBool("daily_cannon_orange_disabled", !value);
+        }
+
+        private bool DailyCannonGoldEnabled
+        {
+            get => !Config.GetBool("daily_cannon_gold_disabled");
+            set => Config.SetBool("daily_cannon_gold_disabled", !value);
+        }
+
+        private bool DailyCannonLimeEnabled
+        {
+            get => !Config.GetBool("daily_cannon_lime_disabled");
+            set => Config.SetBool("daily_cannon_lime_disabled", !value);
+        }
+
+        private bool DailyCannonMintEnabled
+        {
+            get => !Config.GetBool("daily_cannon_mint_disabled");
+            set => Config.SetBool("daily_cannon_mint_disabled", !value);
+        }
+
+        private bool DailyCannonTealEnabled
+        {
+            get => !Config.GetBool("daily_cannon_teal_disabled");
+            set => Config.SetBool("daily_cannon_teal_disabled", !value);
+        }
+
+        private bool DailyCannonCyanEnabled
+        {
+            get => !Config.GetBool("daily_cannon_cyan_disabled");
+            set => Config.SetBool("daily_cannon_cyan_disabled", !value);
+        }
+
+        private bool DailyCannonIndigoEnabled
+        {
+            get => !Config.GetBool("daily_cannon_indigo_disabled");
+            set => Config.SetBool("daily_cannon_indigo_disabled", !value);
+        }
+
+        private bool DailyCannonRoseEnabled
+        {
+            get => !Config.GetBool("daily_cannon_rose_disabled");
+            set => Config.SetBool("daily_cannon_rose_disabled", !value);
+        }
+
+        private bool DailyCannonCoralEnabled
+        {
+            get => !Config.GetBool("daily_cannon_coral_disabled");
+            set => Config.SetBool("daily_cannon_coral_disabled", !value);
         }
 
         private double GameSpawnInterval
@@ -1281,16 +1673,40 @@ namespace VPet.Plugin.VPetBubble
             private readonly CheckBox dailyLightEnabledBox;
             private readonly Slider dailyLightIntervalSlider;
             private readonly Slider dailyLightRandomSlider;
+            private readonly CheckBox dailyCannonEnabledBox;
+            private readonly RadioButton dailyCannonContinuousButton;
+            private readonly RadioButton dailyCannonIntervalButton;
+            private readonly Slider dailyCannonIntervalSlider;
+            private readonly Slider dailyCannonBurstCountSlider;
+            private readonly Slider dailyCannonSizeSlider;
+            private readonly Slider dailyCannonSpeedSlider;
+            private readonly CheckBox dailyCannonBlueBox;
+            private readonly CheckBox dailyCannonGreenBox;
+            private readonly CheckBox dailyCannonPinkBox;
+            private readonly CheckBox dailyCannonPurpleBox;
+            private readonly CheckBox dailyCannonYellowBox;
+            private readonly CheckBox dailyCannonWhiteBox;
+            private readonly CheckBox dailyCannonRedBox;
+            private readonly CheckBox dailyCannonOrangeBox;
+            private readonly CheckBox dailyCannonGoldBox;
+            private readonly CheckBox dailyCannonLimeBox;
+            private readonly CheckBox dailyCannonMintBox;
+            private readonly CheckBox dailyCannonTealBox;
+            private readonly CheckBox dailyCannonCyanBox;
+            private readonly CheckBox dailyCannonIndigoBox;
+            private readonly CheckBox dailyCannonRoseBox;
+            private readonly CheckBox dailyCannonCoralBox;
             private bool isRefreshing;
 
             public BubbleDailySettingWindow(VPetBubbleMain plugin)
             {
                 this.plugin = plugin;
                 Title = "戳泡泡设置";
-                var panels = CreateTabbedContent("戳泡泡设置", "日常模式设置", "泡之财宝设置", "光泡设置");
+                var panels = CreateTabbedContent("戳泡泡设置", "日常模式设置", "泡之财宝设置", "光泡设置", "泡泡炮设置");
                 var dailyPanel = panels[0];
                 var ringPanel = panels[1];
                 var lightPanel = panels[2];
+                var cannonPanel = panels[3];
 
                 enabledBox = new CheckBox
                 {
@@ -1350,6 +1766,115 @@ namespace VPet.Plugin.VPetBubble
                     RefreshFromPlugin();
                 });
 
+                AddSectionTitle(cannonPanel, "泡泡炮设置");
+                dailyCannonEnabledBox = new CheckBox
+                {
+                    Content = "启动泡泡炮",
+                    IsChecked = plugin.DailyCannonEnabled,
+                    Margin = new Thickness(0, 0, 0, 12)
+                };
+                dailyCannonEnabledBox.Checked += (_, _) => UpdateSettings();
+                dailyCannonEnabledBox.Unchecked += (_, _) => UpdateSettings();
+                cannonPanel.Children.Add(dailyCannonEnabledBox);
+
+                var modePanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 0, 0, 14)
+                };
+                cannonPanel.Children.Add(modePanel);
+
+                dailyCannonContinuousButton = new RadioButton
+                {
+                    Content = "自动挡",
+                    GroupName = "BubbleCannonMode",
+                    IsChecked = plugin.DailyCannonContinuousMode,
+                    Margin = new Thickness(0, 0, 18, 0)
+                };
+                dailyCannonContinuousButton.Checked += (_, _) =>
+                {
+                    UpdateCannonModeControlState();
+                    UpdateSettings();
+                };
+                modePanel.Children.Add(dailyCannonContinuousButton);
+
+                dailyCannonIntervalButton = new RadioButton
+                {
+                    Content = "半自动挡",
+                    GroupName = "BubbleCannonMode",
+                    IsChecked = !plugin.DailyCannonContinuousMode
+                };
+                dailyCannonIntervalButton.Checked += (_, _) =>
+                {
+                    UpdateCannonModeControlState();
+                    UpdateSettings();
+                };
+                modePanel.Children.Add(dailyCannonIntervalButton);
+
+                dailyCannonIntervalSlider = AddSlider(cannonPanel, "发射间隔（秒）", plugin.DailyCannonInterval, 0.2, 120, UpdateSettings);
+                dailyCannonBurstCountSlider = AddSlider(cannonPanel, "每次连发数量", plugin.DailyCannonBurstCount, 1, 100, UpdateSettings);
+                dailyCannonSizeSlider = AddSlider(cannonPanel, "泡泡炮大小", plugin.DailyCannonSize, 8, 180, UpdateSettings);
+                dailyCannonSpeedSlider = AddSlider(cannonPanel, "泡泡炮速度", plugin.DailyCannonSpeed, 0.5, 40, UpdateSettings);
+
+                AddSectionTitle(cannonPanel, "颜色选择");
+                var colorPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
+                cannonPanel.Children.Add(colorPanel);
+                dailyCannonBlueBox = AddColorCheckBox(colorPanel, "蓝色", plugin.DailyCannonBlueEnabled);
+                dailyCannonGreenBox = AddColorCheckBox(colorPanel, "绿色", plugin.DailyCannonGreenEnabled);
+                dailyCannonPinkBox = AddColorCheckBox(colorPanel, "粉色", plugin.DailyCannonPinkEnabled);
+                dailyCannonPurpleBox = AddColorCheckBox(colorPanel, "紫色", plugin.DailyCannonPurpleEnabled);
+                dailyCannonYellowBox = AddColorCheckBox(colorPanel, "黄色", plugin.DailyCannonYellowEnabled);
+                dailyCannonWhiteBox = AddColorCheckBox(colorPanel, "白色", plugin.DailyCannonWhiteEnabled);
+                dailyCannonRedBox = AddColorCheckBox(colorPanel, "红色", plugin.DailyCannonRedEnabled);
+                dailyCannonOrangeBox = AddColorCheckBox(colorPanel, "橙色", plugin.DailyCannonOrangeEnabled);
+                dailyCannonGoldBox = AddColorCheckBox(colorPanel, "金色", plugin.DailyCannonGoldEnabled);
+                dailyCannonLimeBox = AddColorCheckBox(colorPanel, "青柠", plugin.DailyCannonLimeEnabled);
+                dailyCannonMintBox = AddColorCheckBox(colorPanel, "薄荷", plugin.DailyCannonMintEnabled);
+                dailyCannonTealBox = AddColorCheckBox(colorPanel, "蓝绿", plugin.DailyCannonTealEnabled);
+                dailyCannonCyanBox = AddColorCheckBox(colorPanel, "青色", plugin.DailyCannonCyanEnabled);
+                dailyCannonIndigoBox = AddColorCheckBox(colorPanel, "靛蓝", plugin.DailyCannonIndigoEnabled);
+                dailyCannonRoseBox = AddColorCheckBox(colorPanel, "玫红", plugin.DailyCannonRoseEnabled);
+                dailyCannonCoralBox = AddColorCheckBox(colorPanel, "珊瑚", plugin.DailyCannonCoralEnabled);
+                UpdateCannonModeControlState();
+
+                AddActionButtons(cannonPanel, "恢复泡泡炮默认", () =>
+                {
+                    plugin.ResetDailyCannonSettings();
+                    RefreshFromPlugin();
+                });
+            }
+
+            private CheckBox AddColorCheckBox(Panel panel, string text, bool isChecked)
+            {
+                var checkBox = new CheckBox
+                {
+                    Content = text,
+                    IsChecked = isChecked,
+                    Margin = new Thickness(0, 0, 18, 10)
+                };
+                checkBox.Checked += (_, _) => UpdateSettings();
+                checkBox.Unchecked += (_, _) => UpdateSettings();
+                panel.Children.Add(checkBox);
+                return checkBox;
+            }
+
+            private void UpdateCannonModeControlState()
+            {
+                var intervalMode = dailyCannonIntervalButton.IsChecked == true;
+                SetSliderRowEnabled(dailyCannonIntervalSlider, intervalMode);
+                SetSliderRowEnabled(dailyCannonBurstCountSlider, intervalMode);
+            }
+
+            private static void SetSliderRowEnabled(Slider slider, bool isEnabled)
+            {
+                if (slider.Parent is UIElement row)
+                {
+                    row.IsEnabled = isEnabled;
+                }
+                else
+                {
+                    slider.IsEnabled = isEnabled;
+                }
             }
 
             private void AddActionButtons(Panel panel, string resetText, Action resetAction)
@@ -1385,6 +1910,28 @@ namespace VPet.Plugin.VPetBubble
                 plugin.DailyLightEnabled = dailyLightEnabledBox.IsChecked == true;
                 plugin.DailyLightInterval = dailyLightIntervalSlider.Value;
                 plugin.DailyLightIntervalRandom = dailyLightRandomSlider.Value;
+                plugin.DailyCannonEnabled = dailyCannonEnabledBox.IsChecked == true;
+                plugin.DailyCannonContinuousMode = dailyCannonContinuousButton.IsChecked == true;
+                plugin.DailyCannonInterval = dailyCannonIntervalSlider.Value;
+                plugin.DailyCannonBurstCount = (int)Math.Round(dailyCannonBurstCountSlider.Value);
+                plugin.DailyCannonSize = (int)Math.Round(dailyCannonSizeSlider.Value);
+                plugin.DailyCannonSpeed = dailyCannonSpeedSlider.Value;
+                plugin.DailyCannonBlueEnabled = dailyCannonBlueBox.IsChecked == true;
+                plugin.DailyCannonGreenEnabled = dailyCannonGreenBox.IsChecked == true;
+                plugin.DailyCannonPinkEnabled = dailyCannonPinkBox.IsChecked == true;
+                plugin.DailyCannonPurpleEnabled = dailyCannonPurpleBox.IsChecked == true;
+                plugin.DailyCannonYellowEnabled = dailyCannonYellowBox.IsChecked == true;
+                plugin.DailyCannonWhiteEnabled = dailyCannonWhiteBox.IsChecked == true;
+                plugin.DailyCannonRedEnabled = dailyCannonRedBox.IsChecked == true;
+                plugin.DailyCannonOrangeEnabled = dailyCannonOrangeBox.IsChecked == true;
+                plugin.DailyCannonGoldEnabled = dailyCannonGoldBox.IsChecked == true;
+                plugin.DailyCannonLimeEnabled = dailyCannonLimeBox.IsChecked == true;
+                plugin.DailyCannonMintEnabled = dailyCannonMintBox.IsChecked == true;
+                plugin.DailyCannonTealEnabled = dailyCannonTealBox.IsChecked == true;
+                plugin.DailyCannonCyanEnabled = dailyCannonCyanBox.IsChecked == true;
+                plugin.DailyCannonIndigoEnabled = dailyCannonIndigoBox.IsChecked == true;
+                plugin.DailyCannonRoseEnabled = dailyCannonRoseBox.IsChecked == true;
+                plugin.DailyCannonCoralEnabled = dailyCannonCoralBox.IsChecked == true;
                 plugin.ApplySettings();
             }
 
@@ -1405,6 +1952,30 @@ namespace VPet.Plugin.VPetBubble
                     dailyLightEnabledBox.IsChecked = plugin.DailyLightEnabled;
                     dailyLightIntervalSlider.Value = plugin.DailyLightInterval;
                     dailyLightRandomSlider.Value = plugin.DailyLightIntervalRandom;
+                    dailyCannonEnabledBox.IsChecked = plugin.DailyCannonEnabled;
+                    dailyCannonContinuousButton.IsChecked = plugin.DailyCannonContinuousMode;
+                    dailyCannonIntervalButton.IsChecked = !plugin.DailyCannonContinuousMode;
+                    dailyCannonIntervalSlider.Value = plugin.DailyCannonInterval;
+                    dailyCannonBurstCountSlider.Value = plugin.DailyCannonBurstCount;
+                    dailyCannonSizeSlider.Value = plugin.DailyCannonSize;
+                    dailyCannonSpeedSlider.Value = plugin.DailyCannonSpeed;
+                    dailyCannonBlueBox.IsChecked = plugin.DailyCannonBlueEnabled;
+                    dailyCannonGreenBox.IsChecked = plugin.DailyCannonGreenEnabled;
+                    dailyCannonPinkBox.IsChecked = plugin.DailyCannonPinkEnabled;
+                    dailyCannonPurpleBox.IsChecked = plugin.DailyCannonPurpleEnabled;
+                    dailyCannonYellowBox.IsChecked = plugin.DailyCannonYellowEnabled;
+                    dailyCannonWhiteBox.IsChecked = plugin.DailyCannonWhiteEnabled;
+                    dailyCannonRedBox.IsChecked = plugin.DailyCannonRedEnabled;
+                    dailyCannonOrangeBox.IsChecked = plugin.DailyCannonOrangeEnabled;
+                    dailyCannonGoldBox.IsChecked = plugin.DailyCannonGoldEnabled;
+                    dailyCannonLimeBox.IsChecked = plugin.DailyCannonLimeEnabled;
+                    dailyCannonMintBox.IsChecked = plugin.DailyCannonMintEnabled;
+                    dailyCannonTealBox.IsChecked = plugin.DailyCannonTealEnabled;
+                    dailyCannonCyanBox.IsChecked = plugin.DailyCannonCyanEnabled;
+                    dailyCannonIndigoBox.IsChecked = plugin.DailyCannonIndigoEnabled;
+                    dailyCannonRoseBox.IsChecked = plugin.DailyCannonRoseEnabled;
+                    dailyCannonCoralBox.IsChecked = plugin.DailyCannonCoralEnabled;
+                    UpdateCannonModeControlState();
                 }
                 finally
                 {
