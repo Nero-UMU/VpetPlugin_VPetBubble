@@ -1,5 +1,5 @@
 ![](VPetBubbleLogo.png)
-# VpetPlugin_VPetBubble
+# VPetBubble 插件
 
 VPet 桌宠戳泡泡插件，桌宠现在会吹泡泡了，支持多种吹泡泡模式，触碰泡泡戳破它们吧
 
