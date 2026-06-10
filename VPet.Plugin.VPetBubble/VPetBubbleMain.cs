@@ -483,7 +483,7 @@ namespace VPet.Plugin.VPetBubble
             var centerDirection = random.Next(4) * Math.PI / 2;
             for (var i = -2; i <= 2; i++)
             {
-                CreateRingBubble(centerDirection + i * Math.PI / 4);
+                CreateRingBubble(centerDirection + i * Math.PI / 4, centerDirection);
             }
         }
 
@@ -561,13 +561,18 @@ namespace VPet.Plugin.VPetBubble
 
         private void CreateRingBubble(double angle)
         {
+            CreateRingBubble(angle, angle);
+        }
+
+        private void CreateRingBubble(double spawnAngle, double moveAngle)
+        {
             var size = random.Next(MinSize, MaxSize + 1);
             var center = GetPetCenter();
             var radius = GetPetRadius() + size / 2.0;
             var start = new Point(
-                center.X + Math.Cos(angle) * radius,
-                center.Y + Math.Sin(angle) * radius);
-            CreateBubbleAt(start, angle, size);
+                center.X + Math.Cos(spawnAngle) * radius,
+                center.Y + Math.Sin(spawnAngle) * radius);
+            CreateBubbleAt(start, moveAngle, size);
         }
 
         private void CreateBubbleAt(Point center, double angle, int? fixedSize = null)
