@@ -1,3 +1,4 @@
+![](VPetBubbleLogo.png)
 # VpetPlugin_VPetBubble
 
 VPet 桌宠冒泡与戳泡泡小游戏插件。
