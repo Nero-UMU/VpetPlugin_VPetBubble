@@ -470,12 +470,13 @@ namespace VPet.Plugin.VPetBubble
             Grid.SetColumn(valueText, 1);
             row.Children.Add(valueText);
 
+            var snapToWholeNumber = max > 40 && Math.Abs(min - Math.Round(min)) < 0.0001;
             var slider = new Slider
             {
                 Minimum = min,
                 Maximum = max,
-                TickFrequency = max <= 1 ? 0.01 : max > 40 ? 1 : 0.1,
-                IsSnapToTickEnabled = max > 40,
+                TickFrequency = max <= 1 ? 0.01 : snapToWholeNumber ? 1 : 0.1,
+                IsSnapToTickEnabled = snapToWholeNumber,
                 SmallChange = max <= 1 ? 0.01 : 0.1,
                 LargeChange = max <= 1 ? 0.1 : 1,
                 AutoToolTipPrecision = max <= 1 ? 2 : 1,

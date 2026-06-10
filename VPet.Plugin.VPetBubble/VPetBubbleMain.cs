@@ -1556,13 +1556,14 @@ namespace VPet.Plugin.VPetBubble
                 Grid.SetColumn(valueText, 1);
                 row.Children.Add(valueText);
 
+                var snapToWholeNumber = max > 40 && Math.Abs(min - Math.Round(min)) < 0.0001;
                 var slider = new Slider
                 {
                     Minimum = min,
                     Maximum = max,
                     Value = value,
-                    TickFrequency = max > 40 ? 1 : 0.1,
-                    IsSnapToTickEnabled = max > 40,
+                    TickFrequency = snapToWholeNumber ? 1 : 0.1,
+                    IsSnapToTickEnabled = snapToWholeNumber,
                     Margin = new Thickness(0, 4, 0, 0)
                 };
                 slider.ValueChanged += (_, _) =>
